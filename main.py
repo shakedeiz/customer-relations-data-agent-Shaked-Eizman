@@ -28,21 +28,11 @@ def visualize_graph(graph: StateGraph, filename: str = "graph.png"):
         graph (StateGraph): The graph to visualize.
         filename (str): The name of the output image file (default is "graph.png").
     """
-    # Assuming 'app' is your compiled graph
     graph_png = graph.get_graph().draw_mermaid_png()
     with open(filename, "wb") as f:
         f.write(graph_png)
 
 
-# ==========================================
-# main.py: Entry Point & CLI Interface
-# ==========================================
-
-# TODO: Import os and dotenv (load API keys)
-# TODO: Import sqlite3 and SqliteSaver from langgraph.checkpoint.sqlite
-# TODO: Import compiled graph (or builder) from graph.py
-
-# TODO: Load .env variables
 load_dotenv()
 
 
@@ -72,11 +62,9 @@ def _print_event(event: dict):
 
 
 def main():
-    # TODO: Initialize SqliteSaver checkpointer for persistent memory (Task 2a)
     conn = sqlite3.connect(str(PROJECT_ROOT / "agent_memory.sqlite"), check_same_thread=False)
     memory = SqliteSaver(conn)
 
-    # TODO: Compile graph with checkpointer: app = builder.compile(checkpointer=memory)
     app = builder.compile(checkpointer=memory)
     visualize_graph(app, filename=GRAPH_IMAGE_FILENAME)
 
@@ -93,12 +81,9 @@ def main():
     }
 
     print("Customer Relations Agent is ready. Type 'exit' or 'quit' to stop.")
-    # TODO: Start a while True loop
     while True:
-        # TODO: Get user input via input() and strip whitespace
         user_input = input("\nYou: ").strip()
 
-        # TODO: Break loop if user types "exit" or "quit"
         if user_input.lower() in {"exit", "quit"}:
             print("You have successfully exited the Customer Relations Agent. See you next time!")
             break
@@ -107,43 +92,20 @@ def main():
 
         print("\nAssistant:")
         try:
-            # TODO: Call app.stream() with user input and config
             stream = app.stream(
                 {"messages": [("user", user_input)]},
                 config=config,
             )
 
-            # TODO: Iterate through stream events
-            # TODO: Print agent reasoning (tool calls/results) clearly (Task 1d)
             for event in stream:
                 _print_event(event)
 
         except GraphRecursionError:
-            # TODO: Print final answer
             print(
                 f"I could not finish this request within the step limit of {MAX_ITERATIONS} steps. "
                 "Please rephrase or narrow the request and try again."
             )
 
 
-# TODO: Add standard if __name__ == "__main__": main()
 if __name__ == "__main__":
     main()
-
-# TODO: Define main() function
-    # TODO: Initialize SqliteSaver checkpointer for persistent memory (Task 2a)
-    # TODO: Compile graph with checkpointer: app = builder.compile(checkpointer=memory)
-    # TODO: Set up config with a thread_id (e.g., {"configurable": {"thread_id": "1"}})
-    
-    # --- Interactive CLI Loop ---
-    # TODO: Start a while True loop
-
-    # TODO: Get user input via input()
-    # TODO: Break loop if user types "exit" or "quit"
-    # TODO: Call app.stream() with user input and config
-    # TODO: Iterate through stream events
-        # TODO: Print agent reasoning (tool calls/results) clearly (Task 1d)
-        # TODO: Print final answer
-        
-# TODO: Add standard if __name__ == "__main__": main()
-visualize_graph(app, filename=GRAPH_IMAGE_FILENAME)

@@ -39,21 +39,7 @@ def _load_df() -> pd.DataFrame:
 
 DF = _load_df()
 
-# --- Data Analysis Tools (Task 1c) ---
-
-# Tool 1: get_samples
-# This tool allows the agent to retrieve example instruction/response pairs from the dataset, filtered by category and/or intent. 
-# This is crucial for grounding the agent's responses in actual data patterns and providing concrete examples when users ask for them.
-
-"""
-Description:
-Returns up to n formatted instruction / response pairs from the dataset, optionally filtered by category and/or intent. 
-If no filters are provided, samples from the full dataset. 
-If an invalid category or intent is supplied, returns an informative error string listing the valid options - never raises an exception.
-"""
-
 class GetSamplesInput(BaseModel):
-    # Optional filters for category and intent, plus a required 'n' for how many examples to return.
     category: Optional[str] = Field(
         None,
         description="High-level category (case-insensitive). Leave None for all categories.",
@@ -88,7 +74,6 @@ class GetSamplesInput(BaseModel):
 
 
 def _suggest(term: str, options: list[str]) -> str:
-    # Helper function to suggest close matches for invalid category/intent inputs
     m = get_close_matches(term, options, n=1, cutoff=0.6)
     return f"\nDid you mean '{m[0]}'?" if m else ""
 
@@ -141,7 +126,7 @@ def get_samples(category: Optional[str] = None, intent: Optional[str] = None, n:
                 f"{_suggest(intent_in, valid_intents)}"
             )
         mask &= intent_norm == intent_in
-    # Here I use the final boolean mask to filter the original DF and select only the instruction and response columns for output
+
     df = DF.loc[mask, ["instruction", "response"]]
 
     if df.empty:
@@ -164,16 +149,6 @@ def get_samples(category: Optional[str] = None, intent: Optional[str] = None, n:
         )
     return "\n\n".join(lines)
 
-# Tool 2: get_aggregate
-# This tool allows the agent to retrieve numeric summaries from the dataset, filtered by category and/or intent. 
-# This is crucial for grounding the agent's responses in actual data patterns and providing concrete metrics when users ask for them.
-
-"""
-Description:
-Returns a pre-computed numeric summary of the dataset, optionally filtered by category and/or intent. 
-When aggregation_type='count', returns a single integer. When aggregation_type='distribution', returns a {intent: count} dict if a category is given, or a {category: count} dict if neither filter is given. 
-Invalid parameters return an informative error string.
-"""
 
 class GetAggregateInput(BaseModel):
     category: Optional[str] = Field(
@@ -265,15 +240,7 @@ def get_aggregate(
     distribution = filtered["category"].astype(str).str.strip().str.upper().value_counts().sort_index().to_dict()
     return f"Category distribution across the full dataset:\n{distribution}"
 
-# Tool 3: Get Linguistic Profile
-# This tool allows the agent to retrieve a linguistic profile of the dataset based on the 12 variation flags, optionally filtered by category and/or intent. 
-# This is crucial for grounding the agent's responses in actual data patterns and providing insights into language
-"""
-Description:
-Reads the flags column for a filtered subset of the dataset and returns a pre-computed percentage breakdown of all 12 language variation tags 
-(e.g., Polite, Colloquial, Offensive, Typos). Takes the same optional category and intent filters as the other tools, 
-and returns the same informative error string on invalid input. No sampling- it runs over the entire filtered subset for statistical accuracy.
-"""
+
 FLAG_LABELS = {
     'B': 'Basic structure',       'I': 'Interrogative',
     'C': 'Coordinated structure', 'N': 'Negation',
@@ -357,11 +324,3 @@ def get_linguistic_profile(category: Optional[str] = None, intent: Optional[str]
 
 
 tools = [get_samples, get_aggregate, get_linguistic_profile]
-# ...existing code...
-# TODO: Define tools using @tool 
-
-# --- Profiling Tools (Task 2b) ---
-# TODO: Define @tool for update_user_profile (input: dict of interests/preferences)
-# TODO: Define @tool for get_user_profile ()
-
-# TODO: Create a list variable 'tools' containing all defined @tool functions
