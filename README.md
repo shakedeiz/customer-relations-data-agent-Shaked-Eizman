@@ -1,29 +1,4 @@
-# customer-relations-data-agent-Shaked-Eizman
-Customer Service Data Analyst Agent: A LangGraph-powered ReAct agent built for the Bitext Customer Service dataset. Features persistent memory, semantic query routing, and an interactive CLI for multi-step data analysis.
-
-### **Model Architecture & Selection**
-
-For this project, I utilize a two-tier model approach, leveraging the Nebius Token Factory:
-
-* **Primary Agent (`Qwen/Qwen3-235B-A22B-Instruct-2507`):** Drives the ReAct loop. I initially used `meta-llama/Llama-3.3-70B-Instruct`, but it exhibited a systematic tool-calling loop — re-issuing identical tool calls after already receiving valid results. I switched to Qwen3-235B-A22B-Instruct, Nebius's flagship instruct model explicitly fine-tuned for tool use. As an additional safeguard, `agent_node` dynamically appends a synthesis reminder to the system prompt whenever a `ToolMessage` is present in state, nudging the model to answer rather than call again.
-
-* **Query Router (`Qwen3-30B-A3B-Instruct-2507`):** I implemented a lightweight routing node to act as a gatekeeper for all incoming user queries. By utilizing this highly optimized Instruct model (with a highly efficient 3B active parameter MoE architecture), I minimize latency (achieving ~70 Tok/s) and keep classification costs negligible. This ensures that the heavier, more expensive 70B+ model is only engaged for complex data synthesis queries it is specifically needed to resolve.
-
-**Justification Summary:** This two-tier strategy optimizes for both cost and efficiency. By offloading classification to a specialized router, I improve the overall responsiveness of the product, while reserving the 70B model’s superior reasoning for the complex logic required during data analysis.
-
-### Router Logic (Concise)
-
-- The router classifies each turn as `structured`, `unstructured`, or `out_of_scope`.
-- Classification uses both the latest user query and recent conversation context (not just the last message).
-- Recent context window is configurable via `ROUTER_HISTORY_USER_TURNS` (default: `3` user turns).
-- Follow-up messages are context-aware:
-	- Refinement of summaries/explanations is routed as `unstructured`.
-	- Requests for counts/rows/examples are routed as `structured`.
-	- Requests like "give concrete examples for this summary" are routed as `structured`.
-- Deterministic retry guard: short retry prompts (`"try again"`, `"retry"`, including common typo `"try agian"`) inherit the latest in-scope intent to avoid false `out_of_scope`.
-- The router stores a rolling `intent_history` and consults at least the last two previous intents for robust follow-up handling.
-
-# Bitext Customer Service Data Analyst Agent
+﻿# Bitext Customer Service Data Analyst Agent
 
 **Shaked Eizman**
 
@@ -50,7 +25,27 @@ Both models are served via the [Nebius Token Factory](https://nebius.com/studio)
 | Primary agent | `Qwen/Qwen3-235B-A22B-Instruct-2507` | Flagship instruct model fine-tuned for tool use; avoids the repeated-tool-call bug seen in Llama-3.3-70B |
 | Query router | `Qwen/Qwen3-30B-A3B-Instruct-2507` | 3B active-parameter MoE; ~70 tok/s at negligible cost; classifies queries before the heavy model is invoked |
 
-See the **Model Architecture & Selection** section at the top of this file for the full justification.
+### Model Selection Details
+
+For this project, I utilize a two-tier model approach, leveraging the Nebius Token Factory:
+
+* **Primary Agent (`Qwen/Qwen3-235B-A22B-Instruct-2507`):** Drives the ReAct loop. I initially used `meta-llama/Llama-3.3-70B-Instruct`, but it exhibited a systematic tool-calling loop — re-issuing identical tool calls after already receiving valid results. I switched to Qwen3-235B-A22B-Instruct, Nebius's flagship instruct model explicitly fine-tuned for tool use. As an additional safeguard, `agent_node` dynamically appends a synthesis reminder to the system prompt whenever a `ToolMessage` is present in state, nudging the model to answer rather than call again.
+
+* **Query Router (`Qwen3-30B-A3B-Instruct-2507`):** I implemented a lightweight routing node to act as a gatekeeper for all incoming user queries. By utilizing this highly optimized Instruct model (with a highly efficient 3B active parameter MoE architecture), I minimize latency (achieving ~70 Tok/s) and keep classification costs negligible. This ensures that the heavier, more expensive 70B+ model is only engaged for complex data synthesis queries it is specifically needed to resolve.
+
+**Justification Summary:** This two-tier strategy optimizes for both cost and efficiency. By offloading classification to a specialized router, I improve the overall responsiveness of the product, while reserving the 70B model's superior reasoning for the complex logic required during data analysis.
+
+### Router Logic
+
+- The router classifies each turn as `structured`, `unstructured`, or `out_of_scope`.
+- Classification uses both the latest user query and recent conversation context (not just the last message).
+- Recent context window is configurable via `ROUTER_HISTORY_USER_TURNS` (default: `3` user turns).
+- Follow-up messages are context-aware:
+  - Refinement of summaries/explanations is routed as `unstructured`.
+  - Requests for counts/rows/examples are routed as `structured`.
+  - Requests like "give concrete examples for this summary" are routed as `structured`.
+- Deterministic retry guard: short retry prompts (`"try again"`, `"retry"`, including common typo `"try agian"`) inherit the latest in-scope intent to avoid false `out_of_scope`.
+- The router stores a rolling `intent_history` and consults at least the last two previous intents for robust follow-up handling.
 
 ## Setup Instructions
 
@@ -91,7 +86,18 @@ HF_TOKEN=your_huggingface_token_here
 - `HF_TOKEN`: obtain from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens). Required to download the Bitext dataset on first run.
 - The dataset is cached locally in `.hf_cache/` after the first download.
 
-## Running the CLI Agent
+**Optional environment variables** (add to `.env` to override defaults):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AGENT_MODEL` | `Qwen/Qwen3-235B-A22B-Instruct-2507` | Model used by the main agent |
+| `ROUTER_MODEL` | `Qwen/Qwen3-30B-A3B-Instruct-2507` | Model used by the query router |
+| `ROUTER_HISTORY_USER_TURNS` | `3` | Number of prior user turns the router sees for follow-up context |
+| `PROFILE_HISTORY_USER_TURNS` | `5` | Number of prior user turns the memory node uses for profile extraction |
+
+## Running the Agent
+
+### CLI
 
 ```bash
 .\venv\Scripts\python.exe main.py   # Windows
@@ -111,6 +117,15 @@ Enter a session ID (or press Enter to start a new session):
 1. Run → enter `user_1` → ask *"Show me 3 examples from the REFUND category"* → type `quit`
 2. Run again → enter `user_1` → ask *"Show me 3 more"*
 3. The agent loads the prior context from SQLite and returns examples 4–6.
+
+### Streamlit UI
+
+```bash
+.\venv\Scripts\streamlit run streamlit_app.py   # Windows
+streamlit run streamlit_app.py                   # Mac/Linux
+```
+
+Open `http://localhost:8501` in your browser. The UI provides a notebook-style interface with numbered turns, a session sidebar for resuming past conversations, and a **Show Profile** button to inspect the current user profile.
 
 ## Starting the MCP Server
 
@@ -144,6 +159,8 @@ Any MCP client that supports **stdio transport** can connect. Point it at the ve
   }
 }
 ```
+
+> **Note:** Update `command` and the path in `args` to match your local installation before using.
 
 Save the config and restart the client. The three tools will appear and can be called directly.
 
