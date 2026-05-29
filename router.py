@@ -40,6 +40,16 @@ RETRY_FOLLOWUP_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+PROFILE_QUERY_PATTERN = re.compile(
+    r"(what do you (remember|know|recall)|remember about me|learned about me"
+    r"|what do i (usually|typically|often|normally|tend to)"
+    r"|what (have i|did i).{0,30}(ask|talk|discuss)"
+    r"|my (profile|preferences|history|style|habits)"
+    r"|what are my (interests|preferences|habits)"
+    r"|show.{0,10}my profile)",
+    re.IGNORECASE,
+)
+
 
 def _format_router_context(state: AgentState) -> str:
     """Build a compact recent transcript so the router can resolve follow-up queries."""
@@ -99,6 +109,7 @@ def router_node(state: AgentState):
         1. 'structured': Choose this if the query asks for concrete numbers, row counts, categorical listings, metric distributions, specific subsets of examples, or precise data aggregations that require executing filtering functions on rows.
         2. 'unstructured': Choose this if the query asks for open-ended thematic analysis, conversational summaries, text pattern syntheses, or stylistic/linguistic overviews of how support rows are written.
         3. 'out_of_scope': Choose this if the query asks about real-world events, general knowledge, custom creative generation tasks (like writing poems), or any company data outside the defined customer support domains of this generic dataset.
+        4. 'unstructured': Also choose this for meta-questions about the conversation itself or what the agent remembers about the user (e.g., "what do you remember about me?", "what do I usually ask about?", "show me my profile"). These are in-scope agent-awareness queries, not dataset queries.
 
         FOLLOW-UP RULE:
         Treat short follow-up requests (e.g., "give me 5 more", "more", "another 3", "same for REFUND", "be more specific", "give me a more detailed answer") as in-scope when recent conversation context is in-scope.
@@ -143,6 +154,15 @@ def router_node(state: AgentState):
         User Input: "Write me a poem about customer service."
         Intent: out_of_scope
 
+        User Input: "What do you remember about me?"
+        Intent: unstructured
+
+        User Input: "What do I usually ask about?"
+        Intent: unstructured
+
+        User Input: "Do you know anything about my preferences?"
+        Intent: unstructured
+
         User Input (after assistant showed SHIPPING samples): "give me 5 more"
         Intent: structured
 
@@ -161,6 +181,16 @@ def router_node(state: AgentState):
     # 2. Build recent context so the router can interpret follow-up ellipsis.
     user_message = state["messages"][-1].content
     last_two_intents = _last_two_intents(state)
+
+    # Deterministic guard: profile/memory questions are always in-scope.
+    if PROFILE_QUERY_PATTERN.search(user_message or ""):
+        updated_history = (state.get("intent_history") or []) + ["unstructured"]
+        print("\n[Router Heuristic]: Profile/memory query detected -> routing as unstructured.")
+        print("[Router Final Route]: unstructured\n")
+        return {
+            "classification": "unstructured",
+            "intent_history": updated_history[-20:],
+        }
 
     # Deterministic guard: retry-only follow-ups should inherit the previous
     # in-scope intent instead of being misclassified as out_of_scope.

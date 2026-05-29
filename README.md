@@ -1,4 +1,4 @@
-ï»¿# Bitext Customer Service Data Analyst Agent
+# Bitext Customer Service Data Analyst Agent
 
 **Shaked Eizman**
 
@@ -6,13 +6,14 @@
 
 This project is a **Customer Service Data Analyst Agent** built with [LangGraph](https://github.com/langchain-ai/langgraph) using a **ReAct (Reason + Act)** architecture.
 
-The agent answers questions about the [Bitext Customer Support dataset](https://huggingface.co/datasets/bitext/Bitext-customer-support-llm-chatbot-training-dataset) â€” a synthetic dataset of ~27 000 instruction/response pairs across 11 categories and ~77 intents.
+The agent answers questions about the [Bitext Customer Support dataset](https://huggingface.co/datasets/bitext/Bitext-customer-support-llm-chatbot-training-dataset) — a synthetic dataset of ~27 000 instruction/response pairs across 11 categories and ~77 intents.
 
 Key features:
 - **ReAct loop**: the agent reasons about what data it needs, calls tools to retrieve it, and synthesises a final answer.
 - **Query router**: a lightweight LLM classifies every incoming message as `structured`, `unstructured`, or `out_of_scope` before the agent sees it.
 - **Three data tools**: `get_samples`, `get_aggregate`, `get_linguistic_profile`.
-- **Persistent memory**: conversation history is stored in a local SQLite database and survives restarts.
+- **Persistent memory**: conversation history and a per-user profile are stored in a local SQLite database and survive restarts.
+- **User profiling**: after every turn the agent automatically extracts topics, communication style, technical level, and other signals from the conversation and stores them as a structured profile. The agent uses this profile to personalise responses and can answer questions like *"what do you remember about me?"*.
 - **MCP server**: the same three tools are exposed via FastMCP so any MCP-compatible client can call them independently of the chat interface.
 - **Streamlit UI**: a notebook-style web interface for interactive sessions.
 
@@ -29,7 +30,7 @@ Both models are served via the [Nebius Token Factory](https://nebius.com/studio)
 
 For this project, I utilize a two-tier model approach, leveraging the Nebius Token Factory:
 
-* **Primary Agent (`Qwen/Qwen3-235B-A22B-Instruct-2507`):** Drives the ReAct loop. I initially used `meta-llama/Llama-3.3-70B-Instruct`, but it exhibited a systematic tool-calling loop â€” re-issuing identical tool calls after already receiving valid results. I switched to Qwen3-235B-A22B-Instruct, Nebius's flagship instruct model explicitly fine-tuned for tool use. As an additional safeguard, `agent_node` dynamically appends a synthesis reminder to the system prompt whenever a `ToolMessage` is present in state, nudging the model to answer rather than call again.
+* **Primary Agent (`Qwen/Qwen3-235B-A22B-Instruct-2507`):** Drives the ReAct loop. I initially used `meta-llama/Llama-3.3-70B-Instruct`, but it exhibited a systematic tool-calling loop — re-issuing identical tool calls after already receiving valid results. I switched to Qwen3-235B-A22B-Instruct, Nebius's flagship instruct model explicitly fine-tuned for tool use. As an additional safeguard, `agent_node` dynamically appends a synthesis reminder to the system prompt whenever a `ToolMessage` is present in state, nudging the model to answer rather than call again.
 
 * **Query Router (`Qwen3-30B-A3B-Instruct-2507`):** I implemented a lightweight routing node to act as a gatekeeper for all incoming user queries. By utilizing this highly optimized Instruct model (with a highly efficient 3B active parameter MoE architecture), I minimize latency (achieving ~70 Tok/s) and keep classification costs negligible. This ensures that the heavier, more expensive 70B+ model is only engaged for complex data synthesis queries it is specifically needed to resolve.
 
@@ -47,6 +48,23 @@ For this project, I utilize a two-tier model approach, leveraging the Nebius Tok
 - Deterministic retry guard: short retry prompts (`"try again"`, `"retry"`, including common typo `"try agian"`) inherit the latest in-scope intent to avoid false `out_of_scope`.
 - The router stores a rolling `intent_history` and consults at least the last two previous intents for robust follow-up handling.
 
+
+### User Profiling
+
+After every turn, `memory_node` runs a structured-output LLM pass over recent conversation history and extracts a `UserProfile` with these fields:
+
+| Field | Description |
+|-------|-------------|
+| `frequent_intents` | Dataset intents the user has repeatedly asked about |
+| `product_area_focus` | Dataset categories they focus on (e.g. REFUND, SHIPPING) |
+| `communication_style` | Inferred tone — formal, casual, technical, etc. |
+| `preferred_response_length` | Short, medium, or detailed |
+| `technical_level` | Beginner, intermediate, or expert |
+| `recent_queries` | Rolling window of the last few user queries |
+
+The profile is stored as part of LangGraph state and checkpointed to `agent_memory.sqlite`. It is reloaded automatically when the same session ID is reused. The number of prior turns used for extraction is configurable via `PROFILE_HISTORY_USER_TURNS` (default: `5`).
+
+The agent injects the profile into its system prompt at every turn. When a profile exists the agent can answer memory questions directly; when no profile has been built yet (e.g. a brand-new session) it tells the user that not enough history exists rather than claiming it has no memory system.
 ## Setup Instructions
 
 **1. Clone the repository**
@@ -110,13 +128,13 @@ On startup the agent will prompt for a session ID:
 Enter a session ID (or press Enter to start a new session):
 ```
 
-- **Type a name** (e.g. `user_1`) to resume a previous conversation â€” the full message history is loaded from `agent_memory.sqlite`.
+- **Type a name** (e.g. `user_1`) to resume a previous conversation — the full message history is loaded from `agent_memory.sqlite`.
 - **Press Enter** to generate a random 8-character ID and start a fresh session.
 
-**Example â€” testing persistence:**
-1. Run â†’ enter `user_1` â†’ ask *"Show me 3 examples from the REFUND category"* â†’ type `quit`
-2. Run again â†’ enter `user_1` â†’ ask *"Show me 3 more"*
-3. The agent loads the prior context from SQLite and returns examples 4â€“6.
+**Example — testing persistence:**
+1. Run ? enter `user_1` ? ask *"Show me 3 examples from the REFUND category"* ? type `quit`
+2. Run again ? enter `user_1` ? ask *"Show me 3 more"*
+3. The agent loads the prior context from SQLite and returns examples 4–6.
 
 ### Streamlit UI
 
@@ -164,7 +182,7 @@ Any MCP client that supports **stdio transport** can connect. Point it at the ve
 
 Save the config and restart the client. The three tools will appear and can be called directly.
 
-**To test without a full client** â€” use [MCP Inspector](https://github.com/modelcontextprotocol/inspector) (requires Node.js):
+**To test without a full client** — use [MCP Inspector](https://github.com/modelcontextprotocol/inspector) (requires Node.js):
 
 ```bash
 npx @modelcontextprotocol/inspector "...\venv\Scripts\python.exe" "...\mcp_server.py"

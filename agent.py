@@ -16,6 +16,12 @@ PROFILE_HISTORY_USER_TURNS = int(os.getenv("PROFILE_HISTORY_USER_TURNS", "5"))
 SYSTEM_PROMPT = (
     "You are a customer-relations data assistant with access to tools that query "
     "the Bitext Customer Service dataset.\n\n"
+    "USER MEMORY:\n"
+    "You maintain a profile of the user that is updated after every turn. "
+    "When a USER PROFILE section appears below, use it to personalise your responses and "
+    "to answer questions like 'what do you remember about me?' or 'what do I usually ask about?'. "
+    "When no USER PROFILE section is present, it means not enough conversation history exists yet "
+    "to build one — tell the user this honestly rather than claiming you have no memory system.\n\n"
     "TOOL SELECTION:\n"
     "- Use 'get_samples' for requests about examples, sample rows, or dataset evidence.\n"
     "- Use 'get_aggregate' for counts, totals, distributions, or breakdowns.\n"
@@ -40,6 +46,28 @@ PROFILE_EXTRACTION_PROMPT = (
     "- If a value is unknown, keep it empty (string fields) or [] (list fields).\n"
     "- Preserve existing profile signal when the current turn does not add new evidence."
 )
+
+def _format_profile_for_prompt(profile: dict) -> str:
+    """Format the stored user profile as a system-prompt section for the agent."""
+    if not profile:
+        return ""
+    parts = []
+    if profile.get("frequent_intents"):
+        parts.append(f"  - Frequent topics: {', '.join(profile['frequent_intents'])}")
+    if profile.get("product_area_focus"):
+        parts.append(f"  - Product areas of interest: {', '.join(profile['product_area_focus'])}")
+    if profile.get("communication_style"):
+        parts.append(f"  - Communication style: {profile['communication_style']}")
+    if profile.get("preferred_response_length"):
+        parts.append(f"  - Preferred response length: {profile['preferred_response_length']}")
+    if profile.get("technical_level"):
+        parts.append(f"  - Technical level: {profile['technical_level']}")
+    if profile.get("recent_queries"):
+        parts.append(f"  - Recent queries: {'; '.join(profile['recent_queries'][-3:])}")
+    if not parts:
+        return ""
+    return "\n\nUSER PROFILE (observed from conversation history):\n" + "\n".join(parts)
+
 
 # Initialized once and reused across turns.
 llm = ChatOpenAI(
@@ -92,6 +120,9 @@ def agent_node(state: AgentState):
     last = state["messages"][-1] if state["messages"] else None
     has_tool_results = isinstance(last, ToolMessage)
 
+    profile_section = _format_profile_for_prompt(state.get("user_profile") or {})
+    system_content = SYSTEM_PROMPT + profile_section
+
     if has_tool_results:
         # Tool results are already in the conversation. Extend the system prompt
         # to remind the model to synthesise rather than re-call, but keep tools
@@ -102,9 +133,9 @@ def agent_node(state: AgentState):
             "If yes, write your final answer in plain text NOW — do not call any tool. "
             "Only call another tool if the user's question requires data you have NOT yet retrieved."
         )
-        system = SystemMessage(content=SYSTEM_PROMPT + synthesis_reminder)
+        system = SystemMessage(content=system_content + synthesis_reminder)
     else:
-        system = SystemMessage(content=SYSTEM_PROMPT)
+        system = SystemMessage(content=system_content)
 
     msg = llm_with_tools.invoke([system, *state["messages"]])
     return {"messages": [msg]}
