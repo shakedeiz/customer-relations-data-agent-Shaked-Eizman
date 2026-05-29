@@ -7,9 +7,15 @@ from router import router_node
 from state import AgentState
 from tools import tools
 
-# ---- Graph Definition ----
+# ---- Graph Definition----
 
-# Node: Refusal (handles out-of-scope queries)
+# Node 1: Router (classifies intent) from router.py
+
+# Node 2: Agent (main reasoning) from agent.py
+
+# Node 3: Tools (calls tools if agent decides to) from tools.py
+
+# Node 4: Refusal (handles out-of-scope queries)
 def refusal_node(state: AgentState):
     return {
         "messages": [
